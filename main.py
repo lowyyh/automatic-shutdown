@@ -10,6 +10,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details.
 """
 import pystray
+import ctypes
 from json import dumps, loads
 from lib.stop import stop_thread
 from PIL import Image
@@ -78,7 +79,6 @@ class main:
         self.config = config
 
     def main(self):
-        print("ok")
         now = dt.now()  # 获取当前时间
         log('-' * 20 + "\n")
         log(now.strftime('%Y-%m-%d %H:%M:%S') + ' 主程序开始运行\n')
@@ -411,25 +411,38 @@ class Setting:
         variable_value_dist = {
             "0": "Dark",
             "1": "Light",
+            "2": "follow_system"
         }
         tk.Radiobutton(setting_style_window, text='黑夜', variable=variable_value, value=0).pack(side=tk.LEFT, padx=5)
         tk.Radiobutton(setting_style_window, text='白天', variable=variable_value, value=1).pack(side=tk.LEFT, padx=5)
+        tk.Radiobutton(setting_style_window, text='跟随系统(win10)', variable=variable_value, value=2).pack(side=tk.LEFT, padx=5)
 
         def ensure():
             key = variable_value.get()
-            if key:
+            if not key:
+                return
+            elif key == "2":
+                dll = ctypes.cdll.LoadLibrary
+                lib = dll('./style.dll')  # 库文件
+                if lib.IsDarkModeEnabled():
+                    config["style"] = "Dark"
+                    icon.icon = Image.open("./lib/icon.ico")
+                else :
+                    config["style"] = "Light"
+                    icon.icon = Image.open("./lib/icon2.ico")
+            elif key:
                 self.config["style"] = variable_value_dist[key]
                 if config["style"] == "Light":
                     icon.icon = Image.open("./lib/icon2.ico")
                 else:  # Dark
                     icon.icon = Image.open("./lib/icon.ico")
 
-                json_data = dumps(self.config, indent=2, ensure_ascii=False)
-                with open(r'./config/config.json', 'w', encoding='utf-8') as f:
-                    f.write(json_data)
+            json_data = dumps(self.config, indent=2, ensure_ascii=False)
+            with open(r'./config/config.json', 'w', encoding='utf-8') as f:
+                f.write(json_data)
 
-                setting_style_window.quit()
-                setting_style_window.destroy()
+            setting_style_window.quit()
+            setting_style_window.destroy()
 
         tk.Button(setting_style_window, text="确定", command=ensure).pack(side=tk.LEFT, padx=5)
         setting_style_window.mainloop()
