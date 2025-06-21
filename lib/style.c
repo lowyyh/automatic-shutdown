@@ -1,5 +1,4 @@
-#include <windows.h>  
-#include <stdio.h>  
+#include <windows.h>
   
 int IsDarkModeEnabled() {  
     DWORD appsUseLightTheme = 1; // 假设为浅色模式  

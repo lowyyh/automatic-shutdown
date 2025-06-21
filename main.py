@@ -1,491 +1,661 @@
-"""
-Copyright (c) 2024 lowyyh
-automatic-shutdown is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-See the Mulan PSL v2 for more details.
-"""
+# Copyright (c) 2024-2025 lowyyh
+# SPDX-License-Identifier: MIT
 import pystray
-import ctypes
-from json import dumps, loads
-from lib.stop import stop_thread
+import json
+import tkinter as tk
+from tkinter import ttk, messagebox
+from winsound import MessageBeep, MB_ICONEXCLAMATION  # 用于播放提示音
 from PIL import Image
 from sys import exit as sys_exit
-from time import sleep
 from os import system
-import tkinter as tk
-from threading import Thread
-from multiprocessing import Queue
-from tkinter import messagebox
-from datetime import datetime as dt
+from threading import Thread, Event
+from datetime import datetime as dt, timedelta
+import lib.stop
 
-
-class App(tk.Frame):
-    def __init__(self, timeout, window=None):
-        super().__init__()
-        self.t = timeout
-        self.root = window
-        self.la = tk.Label(self.root, text=f"电脑将在{self.t}秒后关机!")  # 显示的文本
-        btn = tk.Button(self.root, text="取消关机", command=self.clicked, width=10,
-                        height=2)  # 按钮 text为按钮名称, command为操作
-        btn2 = tk.Button(self.root, text="现在关机", command=self.yes, width=10, height=2)
-        btn3 = tk.Button(self.root, text="跳过此计划", command=self.next_plan, width=10, height=2)
-        self.la["font"] = ("", 40)
-        self.la.grid(row=0, column=0, columnspan=3, sticky="ew")
-        btn.grid(row=1, column=0, sticky="ew")
-        btn2.grid(row=1, column=1, sticky="ew")
-        btn3.grid(row=1, column=2, sticky="ew")
-        self.count_down()
-
-    def count_down(self):
-        while self.t > 0:
-            # print("in while")
-            self.t -= 1
-            sleep(1)
-            self.la.config(text=f"电脑将在{self.t}秒后关机!")
-            try:
-                self.root.update()
-            except:
-                self.root.mainloop()
-        else:
-            self.yes()
-
-    def clicked(self):
-        messagebox.showinfo("automatic-shutdown", "已取消关机")
-        self.root.destroy()
-        log(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 关机操作被取消\n\n')
-        program_exit()
-
-    def yes(self):
-        self.root.destroy()
-        log(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 正常关机\n\n')
-        system("shutdown -s -f -t 01")
-        program_exit()
-
-    def next_plan(self):
-        global tg
-        self.root.destroy()
-        tg = True
-        log(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 跳过当前计划\n\n')
-        return
-
-
-class main:
-    def __init__(self, config):
-        self.config = config
-
-    def main(self):
-        now = dt.now()  # 获取当前时间
-        log('-' * 20 + "\n")
-        log(now.strftime('%Y-%m-%d %H:%M:%S') + ' 主程序开始运行\n')
-        try:
-            times = self.config["plan"][["1", "2", "3", "4", "5", "6", "7"][dt.now().weekday()]]  # 获取当天的计划
-            if (not times) or times[0] == 'None':
-                log(now.strftime('%Y-%m-%d %H:%M:%S') + ' 主程序结束 原因:没有指定关机计划或计划为None\n\n')
-                messagebox.showerror('automatic-shutdown', '没有指定关机计划或计划为None')  # 错误提示
-                return
-
-            for i in times:
-                plan_h = int(i.split(':')[0])
-                now_h = int(now.strftime('%H'))
-                if (plan_h > now_h) or ((plan_h == now_h) and int(i.split(':')[1]) > int(now.strftime('%M'))):
-                    log('    ' + now.strftime('%Y-%m-%d %H:%M:%S') + ' 等待%s中...: \n' % i)
-                    self.main_if(i)
-                else:
-                    pass
-            else:
-                log(now.strftime('%Y-%m-%d %H:%M:%S') + ' 主程序结束 原因:没有可执行的操作\n\n')
-            program_exit()
-        except FileNotFoundError:
-            log(now.strftime('%Y-%m-%d %H:%M:%S') + ' 主程序结束 原因:未找到文件\n\n')
-            program_exit()
-
-    def make_window(self, tmp):
-        root = tk.Tk()
-        root.title("注意!")
-        root.geometry("610x180")
-        root.wm_attributes("-topmost", True)
-        try:
-            app = App(tmp, root)
-        except tk.TclError:
-            global tg
-            if tg:
-                tg = False
-                return
-            else:
-                program_exit()
-
-    def main_if(self, i_in):
-        global icon
-        icon.title = i_in
-        while True:
-            now = dt.now()  # 获取当前时间信息
-            # print("running")
-            if int(i_in.split(':')[0]) == int(now.strftime('%H')):
-                if int(i_in.split(':')[1]) == int(now.strftime('%M')):
-                    if int(i_in.split(':')[2]) <= int(now.strftime('%S')):
-                        log(now.strftime('%Y-%m-%d %H:%M:%S') + ' 吉时已到 %s\n' % i_in)
-                        temp = int(i_in.split(':')[3])
-                        self.make_window(temp)
-                        return
-            sleep(0.6)
-
-
-class Add_temp_play:  # 添加临时计划
-    def __init__(self):
-        self.entry_wait = None
-        self.add_temp_play_window = None
-        self.entry_time = None
-
-    def determine(self):
-        plan_time = self.entry_time.get() + ":" + self.entry_wait.get()
-        try:
-            plan_time_list = [int(i) for i in plan_time.split(":")]
-            if len(plan_time_list) == 4 and 0 <= plan_time_list[0] <= 24 and 0 <= plan_time_list[1] <= 60 and 0 <= \
-                    plan_time_list[2] <= 60:
-                now = dt.now()
-                spring = dt(now.year, now.month, now.day, plan_time_list[0], plan_time_list[1], plan_time_list[2])
-                second = (spring - now).days
-                if second < 0:
-                    tk.messagebox.showwarning(title="automatic-shutdown", message="当前时间大于计划时间")
-
-                global main_th
-                stop_thread(main_th)  # 停止旧线程，开启新的线程
-                main_th = Thread(target=main_task.main_if, args=(plan_time,))
-                main_th.daemon = True
-                main_th.start()
-                self.add_temp_play_window.destroy()
-                log(now.strftime('%Y-%m-%d %H:%M:%S') + f' 添加临时计划 {plan_time}\n')
-            else:
-                tk.messagebox.showerror(title="automatic-shutdown", message="格式错误!")
-        except ValueError:
-            tk.messagebox.showerror(title="automatic-shutdown", message="请输入数字!")
-
-    def cancellation(self):
-        self.add_temp_play_window.destroy()
-        return
-
-    def main(self):
-        self.add_temp_play_window = tk.Tk()
-        label_time = tk.Label(text="请输入时间, 如:'12:00:00'")
-        self.entry_time = tk.Entry(self.add_temp_play_window)
-        label_wait = tk.Label(text="请输入倒计时时间(秒), 如:'20'")
-        self.entry_wait = tk.Entry(self.add_temp_play_window)
-        fr_bt = tk.Frame(self.add_temp_play_window, relief=tk.RAISED, bd=0)
-        bt1 = tk.Button(fr_bt, text="确定", command=self.determine)
-        bt2 = tk.Button(fr_bt, text="取消", command=self.cancellation)
-        bt1.grid(row=0, column=0)
-        bt2.grid(row=0, column=1)
-        label_time.pack()
-        self.entry_time.pack()
-        label_wait.pack()
-        self.entry_wait.pack()
-        fr_bt.pack()
-        self.add_temp_play_window.mainloop()
-
-
-class Add_modify:  # 添加计划-修改-添加
-    def __init__(self, add_play_window_modify, plan_list, queue):
-        self.plan_list = None
-        self.entry_wait = None
-        self.entry_time = None
-        self.add_modify_window = None
-        self.Queue = queue
-        self.window = add_play_window_modify
-        self.plan_list = plan_list
-
-    def list(self, plan_time_list, time_str):
-        time_format = "%H:%M:%S"
-        time_str_obj = dt.strptime(time_str, time_format).time()
-
-        # 将时间字符串转换为datetime.time对象，并检查是否有与time_str相同的时间
-        sorted_time_objs = []
-        for time_str in plan_time_list:
-            time_obj = dt.strptime(time_str, time_format).time()
-            sorted_time_objs.append(time_obj)
-
-        # 将time_str插入到排序后的时间对象列表中
-        sorted_time_objs.append(time_str_obj)
-        sorted_time_objs.sort()
-
-        # 将排序后的时间对象列表转换回时间字符串列表
-        sorted_time_strs = [time_obj.strftime(time_format) for time_obj in sorted_time_objs]
-
-        return sorted_time_strs
-
-    def add_modify_window_determine(self):
-        plan_time_list = [self.entry_time.get(), self.entry_wait.get()]
-        try:
-            plan_time_list_cheek = [int(i) for i in plan_time_list[0].split(":")]
-            plan_time_list_cheek.append(plan_time_list[1])
-            if len(plan_time_list_cheek) == 4 and 0 <= plan_time_list_cheek[0] <= 24 and 0 <= plan_time_list_cheek[
-                1] <= 60 and 0 <= \
-                    plan_time_list_cheek[2] <= 60:
-                dict_key = [':'.join([i for i in i2.split(":")[:-1]]) for i2 in self.plan_list]
-                dict_value = [i2.split(":")[-1] for i2 in self.plan_list]
-                plan_dict = dict(zip(dict_key, dict_value))
-                plan_dict[plan_time_list[0]] = plan_time_list[1]
-                self.Queue.put([i + ':' + plan_dict[i] for i in self.list(dict_key, plan_time_list[0])])
-                self.add_modify_window.quit()
-                self.add_modify_window.destroy()
-            else:
-                tk.messagebox.showerror(title="automatic-shutdown", message="格式错误!")
-        except KeyboardInterrupt:
-            tk.messagebox.showerror(title="automatic-shutdown", message="请输入数字!")
-
-    def add_modify_window_cancellation(self):
-        self.Queue.put(None)
-        self.add_modify_window.quit()
-        self.add_modify_window.destroy()
-
-    def main(self):
-        self.add_modify_window = tk.Toplevel(self.window)
-        # self.add_modify_window = tk.Tk()
-        label_time = tk.Label(self.add_modify_window, text="请输入时间, 如:'12:00:00'")
-        self.entry_time = tk.Entry(self.add_modify_window)
-        label_wait = tk.Label(self.add_modify_window, text="请输入倒计时时间(秒), 如:'20'")
-        self.entry_wait = tk.Entry(self.add_modify_window)
-        fr_bt = tk.Frame(self.add_modify_window, relief=tk.RAISED, bd=0)
-        bt1 = tk.Button(fr_bt, text="确定", command=self.add_modify_window_determine)
-        bt2 = tk.Button(fr_bt, text="取消", command=self.add_modify_window_cancellation)
-        bt1.grid(row=0, column=0)
-        bt2.grid(row=0, column=1)
-        label_time.pack()
-        self.entry_time.pack()
-        label_wait.pack()
-        self.entry_wait.pack()
-        fr_bt.pack()
-        self.add_modify_window.mainloop()
-        pass
-
-
-class Modify:  # 修改计划-修改
-    def __init__(self, config, add_play_window, lb):
-        self.choose = None
-        self.Queue = Queue()
-        self.lb_modify = None
-        self.var_modify = None
-        self.plan_time_list = None
-        self.add_play_window_modify = None
-        self.config = config
-        self.window = add_play_window
-        self.lb = lb
-
-    def the_list(self, plan_time_list):
-        time_format = "%H:%M:%S"
-
-        sorted_time_objs = []
-        for time_str in plan_time_list:
-            time_obj = dt.strptime(time_str, time_format).time()
-            sorted_time_objs.append(time_obj)
-
-        sorted_time_objs.sort()
-
-        # 将排序后的时间对象列表转换回时间字符串列表
-        sorted_time_strs = [time_obj.strftime(time_format) for time_obj in sorted_time_objs]
-
-        return sorted_time_strs
-
-    def complete_modify(self):
-        self.add_play_window_modify.quit()
-
-    def cancellation_modify(self):
-        self.config = None
-        self.add_play_window_modify.quit()
-
-    def remove_modify(self):
-        rm_key = self.lb_modify.curselection()
-        del self.config["plan"][str(self.choose[0] + 1)][rm_key[0]]
-        self.lb_modify.delete(rm_key[0])
-
-    def add_modify(self):
-        bl = Add_modify(self.add_play_window_modify, self.plan_time_list, self.Queue)
-        bl.main()
-        self.plan_time_list = self.Queue.get()
-        if self.plan_time_list is not None:
-            self.config["plan"][str(self.choose[0] + 1)] = self.plan_time_list
-            self.var_modify.set(self.plan_time_list)
-
-    def main(self):
-        self.choose = self.lb.curselection()
-        if self.choose:
-            self.add_play_window_modify = tk.Toplevel(self.window)
-            self.var_modify = tk.StringVar()
-            self.plan_time_list = self.config["plan"][str(self.choose[0] + 1)]
-            self.var_modify.set(self.plan_time_list)
-            self.lb_modify = tk.Listbox(self.add_play_window_modify, listvariable=self.var_modify)
-            fr_add_play_modify = tk.Frame(self.add_play_window_modify, relief=tk.RAISED, bd=0)
-            bt_add_modify = tk.Button(fr_add_play_modify, text="添加", command=self.add_modify)
-            bt_remove_modify = tk.Button(fr_add_play_modify, text="删除", command=self.remove_modify)
-            bt_complete_modify = tk.Button(fr_add_play_modify, text="完成", command=self.complete_modify)
-            bt_cancellation_modify = tk.Button(fr_add_play_modify, text="取消", command=self.cancellation_modify)
-            bt_add_modify.grid(row=0, column=0)
-            bt_complete_modify.grid(row=0, column=1)
-            bt_remove_modify.grid(row=0, column=2)
-            bt_cancellation_modify.grid(row=0, column=3)
-            self.lb_modify.pack()
-            fr_add_play_modify.pack()
-            self.add_play_window_modify.mainloop()
-            self.add_play_window_modify.destroy()
-            return self.config
-        else:
-            tk.messagebox.showerror(title="automatic-shutdown", message="请选择要修改的日期!")
-
-
-class Add_play:  # 修改计划
-    def __init__(self, config):
-        self.lb = None
-        self.add_play_window = None
-        self.config = config
-
-    def modify(self):
-        tmp_config = Modify(self.config, self.add_play_window, self.lb).main()
-        if tmp_config is not None:
-            self.config = tmp_config
-
-    def main(self):
-        self.add_play_window = tk.Tk()
-        var = tk.StringVar()
-        var.set(["周一", "周二", "周三", "周四", "周五", "周六", "周日"])
-        self.lb = tk.Listbox(self.add_play_window, listvariable=var)
-        fr_add_play = tk.Frame(self.add_play_window, relief=tk.RAISED, bd=0)
-        bt_modify = tk.Button(fr_add_play, text="修改", command=self.modify)
-        bt_complete = tk.Button(fr_add_play, text="完成", command=self.complete)
-        bt_cancellation = tk.Button(fr_add_play, text="取消", command=self.cancellation)
-        bt_modify.grid(row=0, column=0)
-        bt_complete.grid(row=0, column=1)
-        bt_cancellation.grid(row=0, column=2)
-        self.lb.pack()
-        fr_add_play.pack()
-        self.add_play_window.mainloop()
-
-    def cancellation(self):
-        self.add_play_window.quit()
-        self.add_play_window.destroy()
-
-    def complete(self):
-        json_data = dumps(self.config, indent=2, ensure_ascii=False)
-        with open(r'./config/config.json', 'w', encoding='utf-8') as f:
-            f.write(json_data)
-
-        global main_task
-        global main_th
-        main_task = main(config)
-        main_th = Thread(target=main_task.main)
-        main_th.daemon = True
-        main_th.start()
-        self.add_play_window.quit()
-        self.add_play_window.destroy()
-
-
-def log(strs):
+def log_message(message):
+    """记录日志消息"""
     try:
-        with open(r".\config\log.txt", "a", encoding="utf-8") as f:
-            f.write(strs)
-    except:
+        with open(r".\config\log.txt", "a", encoding="utf-8") as log_f:
+            log_f.write(message)
+    except FileNotFoundError:
         try:
-            with open(r".\log.txt", "a", encoding="utf-8") as f:
-                f.write(strs)
-        except:
-            with open(r".\log.txt", "w", encoding="utf-8") as f:
-                f.write(strs)
+            with open(r".\log.txt", "a", encoding="utf-8") as log_f:
+                log_f.write(message)
+        except FileNotFoundError:
+            with open(r".\log.txt", "w", encoding="utf-8") as log_f:
+                log_f.write(message)
 
+def exit_program():
+    """退出程序"""
+    global icon
+    global root
 
-def program_exit():
-    icon.stop()
+    if icon:
+        icon.stop()
+
+    root.destroy()
     sys_exit()
 
+def show_help():
+    """显示帮助信息"""
+    help_window = tk.Toplevel()
+    help_window.title("帮助信息")
+    help_window.geometry("400x200")
 
-class Setting:
+    content = """
+    automatic-shutdown 使用说明
+
+    1. 修改计划：修改后的计划永久有效
+    2. 添加临时计划：只等待临时计划，只在本次运行有效
+    3. 设置：更改程序主题等设置
+    4. 退出程序：关闭本程序
+
+    当关机倒计时开始时，您可以选择：
+    - "现在关机"：立即关闭计算机
+    - "跳过此计划"：取消当前关机计划
+    
+    初学者，有不好的地方还请理解
+    """
+
+    tk.Label(help_window, text=content, justify=tk.LEFT, padx=10, pady=10).pack()
+    tk.Button(help_window, text="关闭", command=help_window.destroy).pack(pady=10)
+
+def dedup_time_strings(time_list):
+    seen = {}
+    for s in time_list:
+        key = s[:8]  # 提取前8个字符作为键（HH:MM:SS）
+        if key not in seen:
+            seen[key] = s
+    # 按时间部分（前8个字符）排序
+    return sorted(seen.values(), key=lambda x: x[:8])
+
+
+class ShutdownApp(tk.Toplevel):
+    """关机倒计时提示窗口"""
+
+    def __init__(self, timeout):
+        super().__init__()
+        self.t = timeout
+        self.title("关机提醒")
+        self.geometry("610x190")
+        self.wm_attributes("-topmost", True)
+
+        # 播放提示音
+        MessageBeep(MB_ICONEXCLAMATION)
+
+        # 创建界面元素
+        self.create_widgets()
+        self.start_countdown()
+
+    def create_widgets(self):
+        """创建界面组件"""
+        # 倒计时标签
+        self.lab = tk.Label(self, text=f"电脑将在{self.t}秒后关机!",
+                           font=("", 35), fg="red")
+        self.lab.pack(pady=10)
+
+        # 按钮框架
+        button_frame = tk.Frame(self)
+        button_frame.pack(pady=10)
+
+        # 立即关机按钮
+        btn_shutdown = tk.Button(button_frame, text="现在关机",
+                                 command=self.shutdown_now,
+                                 width=15, height=2, bg="#ff4d4d")
+        btn_shutdown.pack(side=tk.LEFT, padx=10)
+
+        # 跳过计划按钮
+        btn_skip = tk.Button(button_frame, text="跳过此计划",
+                             command=self.skip_plan,
+                             width=15, height=2, bg="#4da6ff")
+        btn_skip.pack(side=tk.LEFT, padx=10)
+
+    def start_countdown(self):
+        """启动倒计时"""
+        self.update_countdown()
+
+    def update_countdown(self):
+        """更新倒计时显示"""
+        if self.t > 0:
+            self.t -= 1
+            self.lab.config(text=f"电脑将在{self.t}秒后关机!")
+            self.after(1000, self.update_countdown)
+        else:
+            self.shutdown_now()
+
+    def shutdown_now(self):
+        """立即关机"""
+        self.destroy()
+        log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 正常关机\n\n')
+        system("shutdown -s -f -t 01")
+        exit_program()
+
+    def skip_plan(self):
+        """跳过当前计划"""
+        self.destroy()
+        log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 跳过当前计划\n\n')
+
+
+class Scheduler:
+    """关机计划调度器"""
+
     def __init__(self, config):
-        self.setting_tk = None
         self.config = config
+        self.stop_event = Event()
 
-    def style(self):
-        setting_style_window = tk.Toplevel(self.setting_tk)
-        variable_value = tk.StringVar()
-        variable_value_dist = {
-            "0": "Dark",
-            "1": "Light",
-            "2": "follow_system"
-        }
-        tk.Radiobutton(setting_style_window, text='黑夜', variable=variable_value, value=0).pack(side=tk.LEFT, padx=5)
-        tk.Radiobutton(setting_style_window, text='白天', variable=variable_value, value=1).pack(side=tk.LEFT, padx=5)
-        tk.Radiobutton(setting_style_window, text='跟随系统(win10)', variable=variable_value, value=2).pack(side=tk.LEFT, padx=5)
+    def run(self):
+        """运行调度器主循环"""
+        now = dt.now()
+        log_message('-' * 20 + "\n")
+        log_message(now.strftime('%Y-%m-%d %H:%M:%S') + ' 调度器开始运行\n')
 
-        def ensure():
-            key = variable_value.get()
-            if not key:
-                return
-            elif key == "2":
-                dll = ctypes.cdll.LoadLibrary
-                lib = dll('./style.dll')  # 库文件
-                if lib.IsDarkModeEnabled():
-                    config["style"] = "Dark"
-                    icon.icon = Image.open("./lib/icon.ico")
-                else :
-                    config["style"] = "Light"
-                    icon.icon = Image.open("./lib/icon2.ico")
-            elif key:
-                self.config["style"] = variable_value_dist[key]
-                if config["style"] == "Light":
-                    icon.icon = Image.open("./lib/icon2.ico")
-                else:  # Dark
-                    icon.icon = Image.open("./lib/icon.ico")
+        # 获取当天的计划
+        weekday_key = str(now.weekday() + 1)  # 1=周一, 7=周日
+        plans = self.config["plan"].get(weekday_key, [])
 
-            json_data = dumps(self.config, indent=2, ensure_ascii=False)
-            with open(r'./config/config.json', 'w', encoding='utf-8') as f:
-                f.write(json_data)
+        if not plans:
+            log_message(now.strftime('%Y-%m-%d %H:%M:%S') +
+                        ' 当天无有效关机计划\n\n')
+            # 等待到次日0点
+            self.wait_until_next_day()
 
-            setting_style_window.quit()
-            setting_style_window.destroy()
+        # 处理当天的计划
+        self.process_daily_plans(plans, now)
 
-        tk.Button(setting_style_window, text="确定", command=ensure).pack(side=tk.LEFT, padx=5)
-        setting_style_window.mainloop()
+        # 当天计划处理完成后等待次日
+        self.wait_until_next_day()
+
+    def process_daily_plans(self, plans, current_time):
+        """处理当天的关机计划"""
+
+        for plan in plans:
+            # 解析计划时间
+            plan_parts = plan.split(':')
+            if len(plan_parts) < 4:
+                continue
+
+            plan_time = dt(current_time.year, current_time.month, current_time.day,
+                           int(plan_parts[0]), int(plan_parts[1]), int(plan_parts[2]))
+            countdown = int(plan_parts[3])
+
+            # 如果计划时间已过，则跳过
+            if plan_time < current_time:
+                continue
+
+            else:
+                # 等待计划时间到达
+                wait_seconds = (plan_time - current_time).total_seconds()
+                log_message(f"    等待计划执行: {plan} (等待时间: {wait_seconds:.0f}秒)\n")
+
+                # 等待计划时间或提前终止
+                if wait_seconds > 0:
+                    self.stop_event.wait(timeout=wait_seconds)
+                    if self.stop_event.is_set():
+                        return
+
+                # 执行计划
+                self.execute_plan(plan)
+
+            # 更新当前时间
+            current_time = dt.now()
+
+    def execute_plan(self, plan_str):
+        """执行单个关机计划"""
+
+        # 解析倒计时时间
+        countdown_seconds = int(plan_str.split(':')[3])
+
+        log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') +
+                    f' 执行关机计划: {plan_str}\n')
+
+        # 创建并显示关机提示窗口
+        # shutdown_app = ShutdownApp(countdown_seconds)
+        # shutdown_app.mainloop()
+
+        root.after(0, lambda: ShutdownApp(countdown_seconds))
+
+    def wait_until_next_day(self):
+        """等待到次日0点"""
+        now = dt.now()
+        next_day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        wait_seconds = (next_day - now).total_seconds()
+
+        log_message(now.strftime('%Y-%m-%d %H:%M:%S') +
+                    f' 等待次日，休眠时间: {wait_seconds:.0f}秒\n\n')
+
+        if wait_seconds > 0:
+            self.stop_event.wait(timeout=wait_seconds)
+            self.stop_event.clear()  # 重置事件
+
+
+class TemporaryPlanDialog:
+    """添加临时计划对话框"""
+
+    def __init__(self, config):
+        self.countdown_entry = None
+        self.time_entry = None
+        self.window = None
+        self.config = config
+        self.day = dt.now().weekday() + 1
 
     def main(self):
-        self.setting_tk = tk.Tk()
-        tk.Button(self.setting_tk, text="主题", command=self.style).pack()
-        self.setting_tk.mainloop()
+        # 通过 root.after 把弹窗调度到主线程
+        root.after(0, self._show_dialog)
+
+    def _show_dialog(self):
+        self.window = tk.Toplevel(root)
+        self.window.title("添加临时关机计划")
+        self.window.geometry("400x200")
+        self.window.resizable(False, False)
+
+        form_frame = ttk.Frame(self.window, padding=10)
+        ttk.Label(form_frame, text="计划时间 (HH:MM:SS):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.time_entry = tk.Entry(form_frame, width=10)
+        self.time_entry.insert(0, dt.now().strftime("%H:%M:%S"))
+        self.time_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
+
+        ttk.Label(form_frame, text="倒计时 (秒):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.countdown_entry = tk.Entry(form_frame, width=10)
+        self.countdown_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
+        self.countdown_entry.insert(0, "60")
+
+        ttk.Label(form_frame, text="格式: 小时:分钟:秒", foreground="gray").grid(row=0, column=2, padx=5)
+        ttk.Label(form_frame, text="例如: 20", foreground="gray").grid(row=1, column=2, padx=5)
+
+        button_frame = ttk.Frame(self.window, padding=10)
+        ttk.Button(button_frame, text="确定", command=self.confirm).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+        form_frame.pack(fill=tk.BOTH, expand=True)
+        button_frame.pack(fill=tk.X)
+
+    def confirm(self):
+        """确认添加临时计划"""
+        time_str = self.time_entry.get()
+        countdown_str = self.countdown_entry.get()
+
+        try:
+            # 验证时间格式
+            time_parts = time_str.split(':')
+            if len(time_parts) != 3:
+                raise ValueError("时间格式不正确")
+
+            hour, minute, second = map(int, time_parts)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+                raise ValueError("时间值超出范围")
+
+            # 验证倒计时
+            countdown = int(countdown_str)
+            if countdown <= 0:
+                raise ValueError("倒计时必须为正数")
+
+            # 创建计划字符串
+            plan = f"{hour:02d}:{minute:02d}:{second:02d}:{countdown}"
+
+            self.config["plan"][str(self.day)].append(plan)
+            self.config["plan"][str(self.day)] = dedup_time_strings(self.config["plan"][str(self.day)])
+
+            # 重启调度器
+            global scheduler, scheduler_thread
+            lib.stop.stop_thread(scheduler_thread)
+
+            # 创建新的调度器线程
+            scheduler = Scheduler(self.config)
+            scheduler_thread = Thread(target=scheduler.run)
+            scheduler_thread.daemon = True
+            scheduler_thread.start()
+
+            log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') +
+                        f' 添加临时计划: {plan}\n')
+
+            self.window.destroy()
+
+        except ValueError as e:
+            messagebox.showerror("输入错误", f"无效输入: {str(e)}")
+
+    def cancel(self):
+        """取消对话框"""
+        self.window.destroy()
 
 
-def help_():
-    help_window = tk.Tk()
-    a = tk.Label(help_window, text='修改计划：修改后的计划永久有效')
-    b = tk.Label(help_window, text='添加临时计划：只等待临时计划，只在本次运行有效')
-    a.pack()
-    b.pack()
-    help_window.mainloop()
+class ScheduleEditor:
+    """计划编辑器"""
 
+    def __init__(self, config):
+        self.config = config
+
+    def main(self):
+        root.after(0, self._show_dialog)
+
+    def _show_dialog(self):
+        self.window = tk.Toplevel(root)
+        self.window.title("编辑关机计划")
+        self.window.geometry("600x400")
+        self.window.resizable(False, False)
+
+        # 创建界面
+        self.create_ui()
+
+        # 加载数据
+        self.load_data()
+
+    def create_ui(self):
+        """创建用户界面"""
+        main_frame = ttk.Frame(self.window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 创建标签框架
+        tab_control = ttk.Notebook(main_frame)
+        tab_control.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 为每一天创建一个标签页
+        self.day_frames = {}
+        self.plan_entries = {}
+
+        days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+        for i, day in enumerate(days, start=1):
+            frame = ttk.Frame(tab_control, padding=10)
+            tab_control.add(frame, text=day)
+
+            # 创建计划列表
+            scrollbar = tk.Scrollbar(frame)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+            listbox = tk.Listbox(frame, yscrollcommand=scrollbar.set, width=40, height=8)
+            listbox.pack(fill=tk.BOTH, expand=True, pady=5)
+            scrollbar.config(command=listbox.yview)
+
+            # 添加按钮
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(fill=tk.X, pady=5)
+
+            ttk.Button(btn_frame, text="添加计划",
+                       command=lambda d=i: self.add_plan(d)).pack(side=tk.LEFT, padx=2)
+            ttk.Button(btn_frame, text="删除计划",
+                       command=lambda lb=listbox, d=i: self.remove_plan(lb, d)).pack(side=tk.LEFT, padx=2)
+
+            # 保存引用
+            self.day_frames[i] = frame
+            self.plan_entries[i] = listbox
+
+        # 添加按钮框架
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Button(btn_frame, text="保存", command=self.save).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="取消", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+    def load_data(self):
+        """加载计划数据"""
+        for day, listbox in self.plan_entries.items():
+            plans = self.config["plan"].get(str(day), [])
+            for plan in plans:
+                listbox.insert(tk.END, plan)
+
+    def add_plan(self, day):
+        """添加新计划"""
+        # 创建添加计划对话框
+        dialog = AddPlanDialog(self.window)
+
+        dialog.main()
+
+        self.window.wait_window(dialog.window)
+
+        if dialog.plan:
+            self.plan_entries[day].insert(tk.END, dialog.plan)
+
+            # 添加到配置
+            if str(day) not in self.config["plan"]:
+                self.config["plan"][str(day)] = []
+
+            self.config["plan"][str(day)].append(dialog.plan)
+            self.config["plan"][str(day)] = dedup_time_strings(self.config["plan"][str(day)])
+
+    def remove_plan(self, listbox, day):
+        """删除选中的计划"""
+        selected = listbox.curselection()
+        if not selected:
+            return
+
+        # 从列表框中移除
+        plan = listbox.get(selected[0])
+        listbox.delete(selected[0])
+
+        # 从配置中移除
+        if str(day) in self.config["plan"] and plan in self.config["plan"][str(day)]:
+            self.config["plan"][str(day)].remove(plan)
+
+    def save(self):
+        """保存修改"""
+        # 保存到配置文件
+        with open(r'./config/config.json', 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, indent=2, ensure_ascii=False)
+
+        # 重启调度器
+        global scheduler, scheduler_thread
+        lib.stop.stop_thread(scheduler_thread)  # 停止当前调度器
+        # 创建新的调度器
+        scheduler = Scheduler(config)
+        scheduler_thread = Thread(target=scheduler.run)
+        scheduler_thread.daemon = True
+        scheduler_thread.start()
+
+        self.window.destroy()
+        messagebox.showinfo("成功", "计划已保存并生效")
+
+    def cancel(self):
+        """取消编辑"""
+        self.window.destroy()
+
+
+class AddPlanDialog:
+    """添加计划对话框"""
+
+    def __init__(self, parent):
+        self.plan = None
+        self.parent = parent
+        self.window = tk.Toplevel(self.parent)
+
+    def main(self):
+        self.parent.after(0, self._show_dialog)
+
+    def _show_dialog(self):
+        self.window.title("添加关机计划")
+        self.window.geometry("300x200")
+        self.window.resizable(False, False)
+
+        # 创建表单
+        self.create_form()
+
+    def create_form(self):
+        """创建表单"""
+        form_frame = ttk.Frame(self.window, padding=15)
+        form_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 时间输入
+        ttk.Label(form_frame, text="时间 (HH:MM:SS):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.time_entry = ttk.Entry(form_frame, width=10)
+        self.time_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
+        self.time_entry.insert(0, "22:00:00")
+
+        # 倒计时输入
+        ttk.Label(form_frame, text="倒计时 (秒):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.countdown_entry = ttk.Entry(form_frame, width=10)
+        self.countdown_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
+        self.countdown_entry.insert(0, "60")
+
+        # 添加按钮
+        button_frame = ttk.Frame(form_frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=15)
+
+        ttk.Button(button_frame, text="确定", command=self.confirm).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+    def confirm(self):
+        """确认添加计划"""
+        try:
+            time_str = self.time_entry.get()
+            countdown = int(self.countdown_entry.get())
+
+            # 验证时间格式
+            parts = time_str.split(':')
+            if len(parts) != 3:
+                raise ValueError("时间格式不正确")
+
+            hour, minute, second = map(int, parts)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+                raise ValueError("时间值超出范围")
+
+            # 创建计划字符串
+            self.plan = f"{hour:02d}:{minute:02d}:{second:02d}:{countdown}"
+            self.window.destroy()
+
+        except ValueError as e:
+            messagebox.showerror("输入错误", f"无效输入: {str(e)}")
+
+    def cancel(self):
+        """取消对话框"""
+        self.window.destroy()
+        self.plan = None
+
+
+class SettingsDialog:
+    """设置对话框"""
+
+    def __init__(self, config):
+        self.config = config
+
+    def main(self):
+        root.after(0, self._show_dialog)
+
+    def _show_dialog(self):
+        self.window = tk.Toplevel()
+        self.window.title("程序设置")
+        self.window.geometry("300x200")
+        self.window.resizable(False, False)
+
+        # 创建界面
+        self.create_ui()
+
+    def create_ui(self):
+        """创建用户界面"""
+        main_frame = ttk.Frame(self.window, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 主题设置
+        ttk.Label(main_frame, text="主题设置:").pack(anchor=tk.W, pady=5)
+
+        self.theme_var = tk.StringVar(value=self.config.get("style", "Light"))
+        theme_frame = ttk.Frame(main_frame)
+        theme_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Radiobutton(theme_frame, text="浅色模式", variable=self.theme_var,
+                        value="Light").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(theme_frame, text="深色模式", variable=self.theme_var,
+                        value="Dark").pack(side=tk.LEFT, padx=10)
+
+        # 按钮
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=15)
+
+        ttk.Button(button_frame, text="保存", command=self.save).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+    def save(self):
+        """保存设置"""
+        # 更新配置
+        self.config["style"] = self.theme_var.get()
+
+        # 更新图标
+        global icon
+        if self.config["style"] == "Light":
+            icon.icon = Image.open("./lib/icon2.ico")
+        else:  # Dark
+            icon.icon = Image.open("./lib/icon.ico")
+
+        # 保存到文件
+        with open(r'./config/config.json', 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, indent=2, ensure_ascii=False)
+
+        self.window.destroy()
+        messagebox.showinfo("成功", "设置已保存")
+
+    def cancel(self):
+        """取消设置"""
+        self.window.destroy()
+
+
+# 全局变量
+icon = None
+scheduler = None
+scheduler_thread = None
 
 if __name__ == '__main__':
-    with open(r'./config/config.json', "r", encoding='utf-8') as f:
-        data_str = f.read()
-        config = loads(data_str)
+    root = tk.Tk()
+    root.withdraw()
 
-    tg = False
-    add_tmp_plan = Add_temp_play()
-    add_play = Add_play(config)
-    main_task = main(config)
-    setting = Setting(config)
-    main_th = Thread(target=main_task.main)
-    main_th.daemon = True
-    icon = pystray.Icon("icon")
-    if config["style"] == "Light":
-        icon.icon = Image.open("./lib/icon2.ico")
-    else:  # Dark
-        icon.icon = Image.open("./lib/icon.ico")
+    # 加载配置文件
+    try:
+        with open(r'./config/config.json', "r", encoding='utf-8') as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        config = {
+            "style": "Light",
+            "plan": {
+                "1": ["22:00:00:60"],  # 周一
+                "2": ["22:00:00:60"],  # 周二
+                "3": ["22:00:00:60"],  # 周三
+                "4": ["22:00:00:60"],  # 周四
+                "5": ["22:00:00:60"],  # 周五
+                "6": ["22:00:00:60"],  # 周六
+                "7": ["22:00:00:60"]  # 周日
+            }
+        }
+        # 创建默认配置文件
+        with open(r'./config/config.json', "w", encoding='utf-8') as f:
+            json.dump(config, f, indent=2)
+
+    # 创建系统托盘图标
+    icon = pystray.Icon("automatic-shutdown")
     icon.title = "automatic-shutdown"
+
+    # 设置图标
+    try:
+        if config["style"] == "Light":
+            icon.icon = Image.open("./lib/icon2.ico")
+        else:  # Dark
+            icon.icon = Image.open("./lib/icon.ico")
+    except:
+        # 使用默认图标
+        pass
+
+    # 创建调度器
+    scheduler = Scheduler(config)
+
+    # 创建线程
+    scheduler_thread = Thread(target=scheduler.run)  # 调度器线程
+    icon_th = Thread(target=icon.run)  # 拖盘图标线程
+
+    scheduler_thread.daemon = True
+    icon_th.daemon = True
+
+    # 实例化
+    temporary_plan_dialog = TemporaryPlanDialog(config)  # 临时计划
+    schedule_editor = ScheduleEditor(config)  # 修改计划
+    settings_dialog = SettingsDialog(config)  # 设置
+
+    # 设置托盘菜单
     icon.menu = pystray.Menu(
-        pystray.MenuItem("修改计划", add_play.main),
-        pystray.MenuItem("添加临时计划", add_tmp_plan.main),
-        pystray.MenuItem("帮助", help_),
-        pystray.MenuItem("设置", setting.main),
-        pystray.MenuItem("退出程序", program_exit)
+        pystray.MenuItem("修改计划", schedule_editor.main),
+        pystray.MenuItem("添加临时计划", temporary_plan_dialog.main),
+        pystray.MenuItem("帮助", show_help),
+        pystray.MenuItem("设置", settings_dialog.main),
+        pystray.MenuItem("退出程序", exit_program)
     )
-    main_th.start()
-    icon.run()
+
+    # 启动线程
+    scheduler_thread.start()  # 调度器线程
+    icon_th.start()  # 运行系统托盘图标
+
+    root.mainloop()
