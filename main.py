@@ -1,84 +1,105 @@
 # Copyright (c) 2024-2025 lowyyh
 # SPDX-License-Identifier: MIT
+import ctypes
 import pystray
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox
 from winsound import MessageBeep, MB_ICONEXCLAMATION  # 用于播放提示音
 from PIL import Image
-from sys import exit as sys_exit
+from sys import exit
 from os import system
 from threading import Thread, Event
 from datetime import datetime as dt, timedelta
 import lib.stop
+from pathlib import Path
+import logging
+import logging.handlers
+import atexit
+import signal
 
-def log_message(message):
-    """记录日志消息"""
-    try:
-        with open(r".\config\log.txt", "a", encoding="utf-8") as log_f:
-            log_f.write(message)
-    except FileNotFoundError:
+
+class LogProcessing:
+    def __init__(self, log_file_path):
+        self.log_file = Path(log_file_path)
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+
+        if not self.logger.handlers:
+            # 使用 RotatingFileHandler 防止日志文件过大
+            handler = logging.handlers.RotatingFileHandler(
+                self.log_file,
+                maxBytes=10 * 1024 * 1024,  # 10MB
+                backupCount=5,
+                encoding='utf-8'
+            )
+
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - [%(threadName)s] - %(message)s'
+            )
+            handler.setFormatter(formatter)
+
+            self.logger.addHandler(handler)
+
+        # 注册退出处理
+        atexit.register(self._cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+    def _cleanup(self):
+        """程序退出时清理资源"""
+        self.logger.info("Application shutting down")
+        logging.shutdown()
+
+    def _signal_handler(self, signum, frame):
+        """信号处理"""
+        self.logger.info(f"Received signal {signum}, shutting down")
+        self._cleanup()
+        exit(0)
+
+    def log(self, level, message, exc_info=None):
+        """统一的日志记录方法"""
         try:
-            with open(r".\log.txt", "a", encoding="utf-8") as log_f:
-                log_f.write(message)
-        except FileNotFoundError:
-            with open(r".\log.txt", "w", encoding="utf-8") as log_f:
-                log_f.write(message)
+            if level == 'INFO':
+                self.logger.info(message, exc_info=exc_info)
+            elif level == 'ERROR':
+                self.logger.error(message, exc_info=exc_info)
+            elif level == 'WARNING':
+                self.logger.warning(message, exc_info=exc_info)
+            elif level == 'DEBUG':
+                self.logger.debug(message, exc_info=exc_info)
+        except Exception as e:
+            # 如果日志记录本身失败，回退到标准输出
+            print(f"Logging failed: {e}, Original message: {message}")
 
-def exit_program():
-    """退出程序"""
-    global icon
-    global root
+    # 便捷方法
+    def info(self, message):
+        self.log('INFO', message)
 
-    if icon:
-        icon.stop()
+    def error(self, message, exc_info=False):
+        self.log('ERROR', message, exc_info=exc_info)
 
-    root.destroy()
-    sys_exit()
+    def warning(self, message):
+        self.log('WARNING', message)
 
-def show_help():
-    """显示帮助信息"""
-    help_window = tk.Toplevel()
-    help_window.title("帮助信息")
-    help_window.geometry("400x200")
-
-    content = """
-    automatic-shutdown 使用说明
-
-    1. 修改计划：修改后的计划永久有效
-    2. 添加临时计划：只等待临时计划，只在本次运行有效
-    3. 设置：更改程序主题等设置
-    4. 退出程序：关闭本程序
-
-    当关机倒计时开始时，您可以选择：
-    - "现在关机"：立即关闭计算机
-    - "跳过此计划"：取消当前关机计划
-    
-    初学者，有不好的地方还请理解
-    """
-
-    tk.Label(help_window, text=content, justify=tk.LEFT, padx=10, pady=10).pack()
-    tk.Button(help_window, text="关闭", command=help_window.destroy).pack(pady=10)
-
-def dedup_time_strings(time_list):
-    seen = {}
-    for s in time_list:
-        key = s[:8]  # 提取前8个字符作为键（HH:MM:SS）
-        if key not in seen:
-            seen[key] = s
-    # 按时间部分（前8个字符）排序
-    return sorted(seen.values(), key=lambda x: x[:8])
+    def debug(self, message):
+        self.log('DEBUG', message)
 
 
 class ShutdownApp(tk.Toplevel):
     """关机倒计时提示窗口"""
 
-    def __init__(self, timeout):
+    def __init__(self, planning, timeout, logger: LogProcessing):
         super().__init__()
+        self.lab = None
         self.t = timeout
+        self.planning = planning
         self.title("关机提醒")
         self.geometry("610x190")
         self.wm_attributes("-topmost", True)
+        self.logger = logger
 
         # 播放提示音
         MessageBeep(MB_ICONEXCLAMATION)
@@ -91,7 +112,7 @@ class ShutdownApp(tk.Toplevel):
         """创建界面组件"""
         # 倒计时标签
         self.lab = tk.Label(self, text=f"电脑将在{self.t}秒后关机!",
-                           font=("", 35), fg="red")
+                            font=("", 35), fg="red")
         self.lab.pack(pady=10)
 
         # 按钮框架
@@ -126,36 +147,39 @@ class ShutdownApp(tk.Toplevel):
     def shutdown_now(self):
         """立即关机"""
         self.destroy()
-        log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 正常关机\n\n')
-        system("shutdown -s -f -t 01")
+        self.logger.info(f"正常执行计划 - {self.planning}")
+        system("shutdown -s -f -t 02")
         exit_program()
 
     def skip_plan(self):
         """跳过当前计划"""
         self.destroy()
-        log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') + ' 跳过当前计划\n\n')
+        self.logger.warning(f"用户跳过了计划 - {self.planning}")
 
 
 class Scheduler:
     """关机计划调度器"""
 
-    def __init__(self, config):
+    def __init__(self, config, logger: LogProcessing):
         self.config = config
         self.stop_event = Event()
+
+        # 加载日志功能
+        log_file_path = Path("./config/log.txt")
+        log_file_path.touch(exist_ok=True)
+        self.logger = logger
 
     def run(self):
         """运行调度器主循环"""
         now = dt.now()
-        log_message('-' * 20 + "\n")
-        log_message(now.strftime('%Y-%m-%d %H:%M:%S') + ' 调度器开始运行\n')
+        self.logger.info("调度器开始运行")
 
         # 获取当天的计划
         weekday_key = str(now.weekday() + 1)  # 1=周一, 7=周日
         plans = self.config["plan"].get(weekday_key, [])
 
         if not plans:
-            log_message(now.strftime('%Y-%m-%d %H:%M:%S') +
-                        ' 当天无有效关机计划\n\n')
+            self.logger.warning("当天没有关机计划")
             # 等待到次日0点
             self.wait_until_next_day()
 
@@ -185,7 +209,7 @@ class Scheduler:
             else:
                 # 等待计划时间到达
                 wait_seconds = (plan_time - current_time).total_seconds()
-                log_message(f"    等待计划执行: {plan} (等待时间: {wait_seconds:.0f}秒)\n")
+                self.logger.info(f"等待计划执行: {plan} (等待时间: {wait_seconds:.0f}秒)")
 
                 # 等待计划时间或提前终止
                 if wait_seconds > 0:
@@ -205,14 +229,13 @@ class Scheduler:
         # 解析倒计时时间
         countdown_seconds = int(plan_str.split(':')[3])
 
-        log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') +
-                    f' 执行关机计划: {plan_str}\n')
+        self.logger.info(f"执行关机计划: {plan_str}")
 
         # 创建并显示关机提示窗口
         # shutdown_app = ShutdownApp(countdown_seconds)
         # shutdown_app.mainloop()
 
-        root.after(0, lambda: ShutdownApp(countdown_seconds))
+        root.after(0, lambda: ShutdownApp(countdown_seconds, self.logger))
 
     def wait_until_next_day(self):
         """等待到次日0点"""
@@ -220,8 +243,7 @@ class Scheduler:
         next_day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
         wait_seconds = (next_day - now).total_seconds()
 
-        log_message(now.strftime('%Y-%m-%d %H:%M:%S') +
-                    f' 等待次日，休眠时间: {wait_seconds:.0f}秒\n\n')
+        self.logger.info(f"等待次日，休眠时间: {wait_seconds:.0f}秒")
 
         if wait_seconds > 0:
             self.stop_event.wait(timeout=wait_seconds)
@@ -231,12 +253,13 @@ class Scheduler:
 class TemporaryPlanDialog:
     """添加临时计划对话框"""
 
-    def __init__(self, config):
+    def __init__(self, config, loger: LogProcessing):
         self.countdown_entry = None
         self.time_entry = None
         self.window = None
         self.config = config
         self.day = dt.now().weekday() + 1
+        self.logger = logger
 
     def main(self):
         # 通过 root.after 把弹窗调度到主线程
@@ -300,13 +323,12 @@ class TemporaryPlanDialog:
             lib.stop.stop_thread(scheduler_thread)
 
             # 创建新的调度器线程
-            scheduler = Scheduler(self.config)
+            scheduler = Scheduler(self.config, self.logger)
             scheduler_thread = Thread(target=scheduler.run)
             scheduler_thread.daemon = True
             scheduler_thread.start()
 
-            log_message(dt.now().strftime('%Y-%m-%d %H:%M:%S') +
-                        f' 添加临时计划: {plan}\n')
+            self.logger.info(f"添加临时计划: {plan}")
 
             self.window.destroy()
 
@@ -321,8 +343,9 @@ class TemporaryPlanDialog:
 class ScheduleEditor:
     """计划编辑器"""
 
-    def __init__(self, config):
+    def __init__(self, config, logger: LogProcessing):
         self.config = config
+        self.logger = logger
 
     def main(self):
         root.after(0, self._show_dialog)
@@ -436,7 +459,7 @@ class ScheduleEditor:
         global scheduler, scheduler_thread
         lib.stop.stop_thread(scheduler_thread)  # 停止当前调度器
         # 创建新的调度器
-        scheduler = Scheduler(config)
+        scheduler = Scheduler(planing_config, self.logger)
         scheduler_thread = Thread(target=scheduler.run)
         scheduler_thread.daemon = True
         scheduler_thread.start()
@@ -474,7 +497,7 @@ class AddPlanDialog:
         form_frame.pack(fill=tk.BOTH, expand=True)
 
         # 时间输入
-        ttk.Label(form_frame, text="时间 (HH:MM:SS):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(form_frame, text="24小时制时间 (HH:MM:SS):").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.time_entry = ttk.Entry(form_frame, width=10)
         self.time_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
         self.time_entry.insert(0, "22:00:00")
@@ -532,7 +555,7 @@ class SettingsDialog:
     def _show_dialog(self):
         self.window = tk.Toplevel()
         self.window.title("程序设置")
-        self.window.geometry("300x200")
+        self.window.geometry()
         self.window.resizable(False, False)
 
         # 创建界面
@@ -554,6 +577,8 @@ class SettingsDialog:
                         value="Light").pack(side=tk.LEFT, padx=10)
         ttk.Radiobutton(theme_frame, text="深色模式", variable=self.theme_var,
                         value="Dark").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(theme_frame, text="跟随系统", variable=self.theme_var,
+                        value="Follow").pack(side=tk.LEFT, padx=10)
 
         # 按钮
         button_frame = ttk.Frame(main_frame)
@@ -570,9 +595,21 @@ class SettingsDialog:
         # 更新图标
         global icon
         if self.config["style"] == "Light":
-            icon.icon = Image.open("./lib/icon2.ico")
-        else:  # Dark
-            icon.icon = Image.open("./lib/icon.ico")
+            icon.icon = Image.open("lib/Light.ico")
+
+        elif self.config["style"] == "Dark":  # Dark
+            icon.icon = Image.open("lib/Dark.ico")
+
+        else:
+            dll = ctypes.cdll.LoadLibrary
+            lib_file = dll('./lib/style.dll')  # 库文件
+
+            self.config["style"] = "Follow"
+            if lib_file.IsDarkModeEnabled():
+                icon.icon = Image.open("lib/Dark.ico")
+
+            else:
+                icon.icon = Image.open("lib/Light.ico")
 
         # 保存到文件
         with open(r'./config/config.json', 'w', encoding='utf-8') as f:
@@ -586,6 +623,74 @@ class SettingsDialog:
         self.window.destroy()
 
 
+def exit_program():
+    """退出程序"""
+    global icon
+    global root
+
+    if icon:
+        icon.stop()
+
+    root.destroy()
+    exit()
+
+
+def show_help():
+    """显示帮助信息"""
+    help_window = tk.Toplevel()
+    help_window.title("帮助信息")
+    help_window.geometry("400x200")
+
+    content = """
+    automatic-shutdown 使用说明
+
+    1. 修改计划：修改后的计划永久有效
+    2. 添加临时计划：只等待临时计划，只在本次运行有效
+    3. 设置：更改程序主题等设置
+    4. 退出程序：关闭本程序
+
+    当关机倒计时开始时，您可以选择：
+    - "现在关机"：立即关闭计算机
+    - "跳过此计划"：取消当前关机计划
+
+    初学者，有不好的地方还请理解
+    """
+
+    tk.Label(help_window, text=content, justify=tk.LEFT, padx=10, pady=10).pack()
+    tk.Button(help_window, text="关闭", command=help_window.destroy).pack(pady=10)
+
+
+def dedup_time_strings(time_list):
+    seen = {}
+    for s in time_list:
+        key = s[:8]  # 提取前8个字符作为键（HH:MM:SS）
+        if key not in seen:
+            seen[key] = s
+    # 按时间部分（前8个字符）排序
+    return sorted(seen.values(), key=lambda x: x[:8])
+
+
+def making_default_config_file(path):
+    default_configuration = {
+        "style": "Light",
+        "plan": {
+            "1": ["22:00:00:60"],  # 周一
+            "2": ["22:00:00:60"],  # 周二
+            "3": ["22:00:00:60"],  # 周三
+            "4": ["22:00:00:60"],  # 周四
+            "5": ["22:00:00:60"],  # 周五
+            "6": ["22:00:00:60"],  # 周六
+            "7": ["22:00:00:60"]  # 周日
+        }
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding='utf-8') as f:
+        json.dump(default_configuration, f, indent=2)
+
+    return default_configuration
+
+
 # 全局变量
 icon = None
 scheduler = None
@@ -595,26 +700,26 @@ if __name__ == '__main__':
     root = tk.Tk()
     root.withdraw()
 
-    # 加载配置文件
+    # 初始化日志功能
+    logger = LogProcessing("./config/log_file.log")
+    logger.info("主程序开始运行")
+
+    # 加载配置
+    configuration_file_path = Path("./config/config.json")
+
     try:
-        with open(r'./config/config.json', "r", encoding='utf-8') as f:
-            config = json.load(f)
-    except FileNotFoundError:
-        config = {
-            "style": "Light",
-            "plan": {
-                "1": ["22:00:00:60"],  # 周一
-                "2": ["22:00:00:60"],  # 周二
-                "3": ["22:00:00:60"],  # 周三
-                "4": ["22:00:00:60"],  # 周四
-                "5": ["22:00:00:60"],  # 周五
-                "6": ["22:00:00:60"],  # 周六
-                "7": ["22:00:00:60"]  # 周日
-            }
-        }
-        # 创建默认配置文件
-        with open(r'./config/config.json', "w", encoding='utf-8') as f:
-            json.dump(config, f, indent=2)
+        with configuration_file_path.open("r", encoding='utf-8') as f:
+            planing_config = json.load(f)
+
+    except json.JSONDecodeError as e:  # 文件格式错误
+        logger.error(message="配置文件格式错误", exc_info=True)
+        planing_config = making_default_config_file(configuration_file_path)
+        logger.info("已创建默认配置文件")
+
+    except FileNotFoundError as e:
+        logger.warning(message="未找到配置文件")
+        planing_config = making_default_config_file(configuration_file_path)
+        logger.info("已创建默认配置文件")
 
     # 创建系统托盘图标
     icon = pystray.Icon("automatic-shutdown")
@@ -622,16 +727,27 @@ if __name__ == '__main__':
 
     # 设置图标
     try:
-        if config["style"] == "Light":
-            icon.icon = Image.open("./lib/icon2.ico")
-        else:  # Dark
-            icon.icon = Image.open("./lib/icon.ico")
-    except:
+        style = planing_config.get("style", None)
+        if style == "Light":
+            icon.icon = Image.open("lib/Light.ico")
+
+        elif style == "Dark":  # Dark
+            icon.icon = Image.open("lib/Dark.ico")
+
+        else:
+            dll = ctypes.cdll.LoadLibrary
+            lib_file = dll('./lib/style.dll')  # 库文件
+            if lib_file.IsDarkModeEnabled():
+                icon.icon = Image.open("lib/Dark.ico")
+            else:
+                icon.icon = Image.open("lib/Light.ico")
+
+    except FileNotFoundError as e:
         # 使用默认图标
-        pass
+        logger.error(message="未找到图标文件", exc_info=True)
 
     # 创建调度器
-    scheduler = Scheduler(config)
+    scheduler = Scheduler(planing_config, logger)
 
     # 创建线程
     scheduler_thread = Thread(target=scheduler.run)  # 调度器线程
@@ -641,9 +757,9 @@ if __name__ == '__main__':
     icon_th.daemon = True
 
     # 实例化
-    temporary_plan_dialog = TemporaryPlanDialog(config)  # 临时计划
-    schedule_editor = ScheduleEditor(config)  # 修改计划
-    settings_dialog = SettingsDialog(config)  # 设置
+    temporary_plan_dialog = TemporaryPlanDialog(planing_config, logger)  # 临时计划
+    schedule_editor = ScheduleEditor(planing_config, logger)  # 修改计划
+    settings_dialog = SettingsDialog(planing_config)  # 设置
 
     # 设置托盘菜单
     icon.menu = pystray.Menu(

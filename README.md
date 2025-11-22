@@ -32,7 +32,7 @@
    ```
    运行后会在系统托盘显示图标，右键点击可进行各种操作。
 4. **图标说明**
-   ![image](./lib/icon2.ico)
+   ![image](lib/Light.ico)
 
 ## 文件结构
 
@@ -41,19 +41,17 @@ LICENSE
 main.py
 README.md
 requirements.txt
-text.py
-tmp.py
-.idea/
 config/
 lib/
+old/
 ```
 
 - `main.py`：主程序入口，托盘与调度逻辑
-- `text.py`/`tmp.py`：备用或测试代码
 - `lib/stop.py`：线程停止工具
 - `lib/style.c`：主题检测C语言代码
 - `config/config.json`：关机计划与设置
 - `config/log.txt`：日志文件
+- `old/`：过去的版本，算得上是我的怀念吧
 
 ## 使用说明
 

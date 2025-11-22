@@ -1,0 +1,42 @@
+2025-11-22 21:13:23,230 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:13:23,297 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:13:23,298 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 2797秒)
+2025-11-22 21:13:34,559 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:13:34,560 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:13:34,560 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:25:17,072 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:25:17,139 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:25:17,139 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 2083秒)
+2025-11-22 21:25:37,283 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:25:37,283 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:25:37,286 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:27:59,434 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:27:59,504 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:27:59,504 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 1920秒)
+2025-11-22 21:28:14,744 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:28:14,745 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:28:14,746 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:29:03,856 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:29:03,918 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:29:03,918 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 1856秒)
+2025-11-22 21:29:15,243 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:29:15,243 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:29:15,244 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:29:29,263 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:29:29,339 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:29:29,339 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 1831秒)
+2025-11-22 21:30:06,500 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:30:06,501 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:30:06,502 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:30:08,555 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:30:08,623 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:30:08,623 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 1791秒)
+2025-11-22 21:31:10,458 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:31:10,458 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:31:10,460 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:31:12,499 - __main__ - INFO - [MainThread] - 主程序开始运行
+2025-11-22 21:31:12,562 - __main__ - INFO - [Thread-1 (run)] - 调度器开始运行
+2025-11-22 21:31:12,562 - __main__ - INFO - [Thread-1 (run)] - 等待计划执行: 22:00:00:60 (等待时间: 1727秒)
+2025-11-22 21:31:16,073 - __main__ - INFO - [MainThread] - Received signal 2, shutting down
+2025-11-22 21:31:16,073 - __main__ - INFO - [MainThread] - Application shutting down
+2025-11-22 21:31:16,074 - __main__ - INFO - [MainThread] - Application shutting down
