@@ -1,3 +1,5 @@
+// AI生成
+
 #include <windows.h>
   
 int IsDarkModeEnabled() {  

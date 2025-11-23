@@ -1,3 +1,6 @@
+# Copyright (c) 2025 lowyyh
+# SPDX-License-Identifier: MIT
+
 import sys
 import time
 from os import system
